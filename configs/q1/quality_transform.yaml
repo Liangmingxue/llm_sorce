@@ -1,0 +1,194 @@
+version: 1
+reference_policy:
+  direct_quality_signals: "A1 global empirical reference; A2/A3 reuse A1"
+  domain_dependent_signals: "A1 source-domain empirical reference; A2 arxiv and A3 github reuse corresponding A1 domain"
+  missing_values: "preserve NaN; renormalize valid weights only during final Q aggregation"
+
+output_dimension: 22
+
+groups:
+  semantic_quality:
+    fields:
+      - fineweb_edu
+      - fluency_en
+      - modernbert_cleanliness
+      - modernbert_readability
+      - modernbert_reasoning
+      - modernbert_professionalism
+      - qurater
+      - ad_en
+
+  dsir:
+    fields:
+      - dsir_books
+      - dsir_wiki
+      - dsir_math
+    aggregation_note: "retain all three transformed scores, but later assign one shared group weight to avoid triple-counting"
+
+  length_structure:
+    fields:
+      - rps_doc_word_count
+      - rps_doc_num_sentences
+    aggregation_note: "retain both transformed scores, but later assign one shared group weight because they are strongly redundant"
+
+  rps_other:
+    fields:
+      - rps_doc_unigram_entropy
+      - rps_doc_frac_unique_words
+      - rps_doc_frac_no_alph_words
+      - rps_doc_frac_chars_top_2gram
+      - rps_doc_frac_chars_top_3gram
+      - rps_lines_ending_with_terminal_punctution_mark
+      - rps_lines_uppercase_letter_fraction
+      - rps_lines_numerical_chars_fraction
+      - rps_doc_mean_word_length
+
+transforms:
+  fineweb_edu:
+    method: global_ecdf_positive
+
+  fluency_en:
+    method: global_ecdf_positive
+
+  modernbert_cleanliness:
+    method: global_ecdf_positive
+
+  modernbert_readability:
+    method: global_ecdf_positive
+
+  modernbert_reasoning:
+    method: global_ecdf_positive
+
+  modernbert_professionalism:
+    method: global_ecdf_positive
+
+  ad_en:
+    method: global_ecdf_positive
+
+  qurater:
+    method: component_ecdf_mean
+    components:
+      - qurater_writing_style
+      - qurater_required_expertise
+      - qurater_facts_trivia
+      - qurater_educational_value
+    component_reference: A1_global
+    note: "all four components are empirically positive; equal-weight ECDF mean is as stable as PCA and more interpretable"
+
+  dsir_books:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: positive
+      book: typicality
+      c4: negative
+      commoncrawl: negative
+      github: negative
+      stackexchange: negative
+      wikipedia: negative
+
+  dsir_wiki:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: positive
+      book: typicality
+      c4: negative
+      commoncrawl: negative
+      github: negative
+      stackexchange: negative
+      wikipedia: negative
+
+  dsir_math:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: positive
+      book: typicality
+      c4: negative
+      commoncrawl: negative
+      github: negative
+      stackexchange: negative
+      wikipedia: negative
+
+  rps_doc_word_count:
+    method: domain_ecdf_p95_saturation
+    saturation_quantile: 0.95
+
+  rps_doc_num_sentences:
+    method: domain_ecdf_p95_saturation
+    saturation_quantile: 0.95
+
+  rps_doc_unigram_entropy:
+    method: global_ecdf_positive
+    note: "high-tail diagnostics did not show a stable quality reversal"
+
+  rps_doc_frac_unique_words:
+    method: domain_length_residual_typicality
+    length_field: rps_doc_word_count
+    length_transform: log1p
+    residual_model: quadratic
+    score: reverse_ecdf_absolute_residual
+    note: "length explains 60.8%-88.6% by domain; signed residual has weak quality relation, absolute residual is consistently weakly negative"
+
+  rps_doc_frac_no_alph_words:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: negative
+      book: negative
+      c4: negative
+      commoncrawl: negative
+      github: typicality
+      stackexchange: typicality
+      wikipedia: negative
+
+  rps_doc_frac_chars_top_2gram:
+    method: global_ecdf_negative
+
+  rps_doc_frac_chars_top_3gram:
+    method: global_ecdf_negative
+
+  rps_lines_ending_with_terminal_punctution_mark:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: typicality
+      book: typicality
+      c4: typicality
+      commoncrawl: positive
+      github: typicality
+      stackexchange: typicality
+      wikipedia: positive
+    note: "C4 is nearly constant, so this field will later receive very low reliability there"
+
+  rps_lines_uppercase_letter_fraction:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: typicality
+      book: typicality
+      c4: negative
+      commoncrawl: negative
+      github: negative
+      stackexchange: negative
+      wikipedia: upper_tail_penalty
+    upper_tail_start_quantile: 0.90
+
+  rps_lines_numerical_chars_fraction:
+    method: domain_typicality
+    note: "no stable monotonic quality direction across domains"
+
+  rps_doc_mean_word_length:
+    method: domain_ecdf_directional
+    directions:
+      arxiv: upper_tail_penalty
+      book: positive
+      c4: positive
+      commoncrawl: positive
+      github: negative
+      stackexchange: negative
+      wikipedia: negative
+    upper_tail_start_quantile: 0.90
+
+typicality_definition:
+  method: triangular_ecdf
+  formula: "1 - 2*abs(F_d(x)-0.5)"
+
+upper_tail_penalty_definition:
+  method: one_sided_ecdf
+  formula: "1 for F_d(x)<=q0; (1-F_d(x))/(1-q0) for F_d(x)>q0"
