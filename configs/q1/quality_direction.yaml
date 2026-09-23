@@ -1,0 +1,103 @@
+# Question 1 quality-indicator direction specification
+# This file defines semantic direction only.
+# It does NOT define the final normalization method or the final quality score Q.
+
+version: 1
+
+positive:
+  fineweb_edu:
+    meaning: "教育价值"
+    rule: "higher_is_better"
+
+  fluency_en:
+    meaning: "流畅度（预处理后为流畅概率）"
+    rule: "higher_is_better"
+
+  modernbert_cleanliness:
+    meaning: "文本整洁度"
+    rule: "higher_is_better"
+
+  modernbert_readability:
+    meaning: "可读性"
+    rule: "higher_is_better"
+
+  modernbert_reasoning:
+    meaning: "推理性"
+    rule: "higher_is_better"
+
+  modernbert_professionalism:
+    meaning: "专业性"
+    rule: "higher_is_better"
+
+  ad_en:
+    meaning: "无广告概率（预处理后）"
+    rule: "higher_is_better"
+
+negative:
+  rps_doc_frac_chars_top_2gram:
+    meaning: "高频2-gram覆盖特征"
+    rule: "lower_is_better"
+
+  rps_doc_frac_chars_top_3gram:
+    meaning: "高频3-gram覆盖特征"
+    rule: "lower_is_better"
+
+non_monotonic:
+  rps_doc_word_count:
+    meaning: "文档词数"
+    rule: "optimal_range"
+
+  rps_doc_num_sentences:
+    meaning: "句子数"
+    rule: "optimal_range"
+
+  rps_doc_unigram_entropy:
+    meaning: "unigram熵"
+    rule: "optimal_range"
+
+  rps_doc_frac_unique_words:
+    meaning: "唯一词比例"
+    rule: "optimal_range_or_length_adjusted"
+
+  rps_lines_uppercase_letter_fraction:
+    meaning: "大写字母比例"
+    rule: "optimal_range_or_upper_tail_penalty"
+
+  rps_doc_mean_word_length:
+    meaning: "平均词长"
+    rule: "optimal_range"
+
+domain_dependent:
+  dsir_books:
+    meaning: "相对Books域的重要性/相似性"
+    rule: "domain_calibrated"
+
+  dsir_wiki:
+    meaning: "相对Wikipedia域的重要性/相似性"
+    rule: "domain_calibrated"
+
+  dsir_math:
+    meaning: "相对数学语料域的重要性/相似性"
+    rule: "domain_calibrated"
+
+  qurater:
+    meaning: "写作风格/所需专业度/事实知识/教育价值的4元综合信号"
+    rule: "component_aware"
+
+  rps_doc_frac_no_alph_words:
+    meaning: "无字母词比例"
+    rule: "domain_calibrated_negative"
+
+  rps_lines_ending_with_terminal_punctution_mark:
+    meaning: "以终止标点结尾的行比例"
+    rule: "domain_calibrated_positive"
+
+  rps_lines_numerical_chars_fraction:
+    meaning: "数字字符比例"
+    rule: "domain_calibrated"
+
+notes:
+  - "进入最终综合评价前，所有处理后的质量指标必须统一为：数值越大表示质量越高。"
+  - "non_monotonic 与 domain_dependent 指标当前仅定义语义类型，不在本文件中指定最终数学变换。"
+  - "qurater 原始为4维列表，后续需单独论证其压缩方式；预处理阶段保留了4个子分量。"
+  - "A1/A2/A3 使用同一套方向规则，避免扩展集和抽样集口径不一致。"
