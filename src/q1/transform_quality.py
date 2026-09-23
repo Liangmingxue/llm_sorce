@@ -21,7 +21,10 @@ QURATER_COMPONENTS = [
 
 
 def _finite_array(series: pd.Series) -> np.ndarray:
-    x = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    # pandas 2.x may expose a read-only NumPy view here (notably with
+    # copy-on-write / extension-backed columns).  We intentionally copy
+    # because the next line replaces non-finite values in-place.
+    x = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float, copy=True)
     x[~np.isfinite(x)] = np.nan
     return x
 
