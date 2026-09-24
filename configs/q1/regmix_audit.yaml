@@ -1,0 +1,7 @@
+version: 1
+
+expected_mixture_columns: 17
+expected_loss_columns: 13
+simplex_tolerance: 1.0e-12
+normalized_recipe_decimals: 12
+raw_recipe_decimals: 6
