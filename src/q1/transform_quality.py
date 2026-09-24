@@ -152,6 +152,123 @@ def _domain_p95_saturation(
     return out
 
 
+
+def _domain_length_conditioned_ecdf_positive(
+    a1: pd.DataFrame,
+    target: pd.DataFrame,
+    field: str,
+    length_field: str,
+    max_bins: int = 30,
+    min_bins: int = 4,
+    target_rows_per_bin: int = 20,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Positive ECDF conditional on source domain and document length.
+
+    Bin boundaries are fitted only on A1 within each source domain. A2/A3
+    reuse those A1 boundaries and A1 conditional empirical distributions,
+    so expansion data never refit the quality scale.
+    """
+    if max_bins < 2 or min_bins < 2 or min_bins > max_bins:
+        raise ValueError("Require 2 <= min_bins <= max_bins.")
+    if target_rows_per_bin < 2:
+        raise ValueError("target_rows_per_bin must be >= 2.")
+
+    out = np.full(len(target), np.nan, dtype=float)
+    params: dict[str, Any] = {}
+
+    for domain, idx in target.groupby("source_domain", sort=False).groups.items():
+        domain = str(domain)
+        ref_g = a1[a1["source_domain"] == domain]
+
+        ref_length = _finite_array(ref_g[length_field])
+        ref_y = _finite_array(ref_g[field])
+        ref_length_ok = np.isfinite(ref_length) & (ref_length >= 0)
+
+        n_ref_length = int(ref_length_ok.sum())
+        if n_ref_length < min_bins:
+            raise ValueError(
+                f"Too few A1 reference rows for conditional ECDF: "
+                f"domain={domain}, field={field}, n={n_ref_length}"
+            )
+
+        q_requested = min(
+            max_bins,
+            max(min_bins, n_ref_length // target_rows_per_bin),
+            n_ref_length,
+        )
+
+        z_ref = np.log1p(ref_length[ref_length_ok])
+        _, raw_edges = pd.qcut(
+            z_ref,
+            q=q_requested,
+            retbins=True,
+            duplicates="drop",
+        )
+        raw_edges = np.asarray(raw_edges, dtype=float)
+
+        if raw_edges.size < 2:
+            raise ValueError(
+                f"Could not form length bins: domain={domain}, field={field}"
+            )
+
+        assign_edges = raw_edges.copy()
+        assign_edges[0] = -np.inf
+        assign_edges[-1] = np.inf
+        n_bins = int(assign_edges.size - 1)
+
+        ref_bins = np.full(len(ref_g), -1, dtype=int)
+        ref_bins[ref_length_ok] = np.searchsorted(
+            assign_edges[1:-1],
+            np.log1p(ref_length[ref_length_ok]),
+            side="right",
+        )
+
+        target_pos = target.index.get_indexer(idx)
+        target_length = _finite_array(target.loc[idx, length_field])
+        target_y = _finite_array(target.loc[idx, field])
+        target_length_ok = np.isfinite(target_length) & (target_length >= 0)
+
+        target_bins = np.full(len(idx), -1, dtype=int)
+        target_bins[target_length_ok] = np.searchsorted(
+            assign_edges[1:-1],
+            np.log1p(target_length[target_length_ok]),
+            side="right",
+        )
+
+        ref_bin_sizes: list[int] = []
+        for bin_id in range(n_bins):
+            ref_mask = (ref_bins == bin_id) & np.isfinite(ref_y)
+            ref_vals = ref_y[ref_mask]
+            ref_bin_sizes.append(int(ref_vals.size))
+
+            if ref_vals.size == 0:
+                raise ValueError(
+                    f"Empty A1 conditional reference bin: "
+                    f"domain={domain}, field={field}, bin={bin_id}"
+                )
+
+            local_pos = np.where(target_bins == bin_id)[0]
+            if local_pos.size == 0:
+                continue
+
+            out[target_pos[local_pos]] = _mid_ecdf(
+                ref_vals,
+                target_y[local_pos],
+            )
+
+        params[domain] = {
+            "length_field": length_field,
+            "length_transform": "log1p",
+            "requested_bins": int(q_requested),
+            "actual_bins": n_bins,
+            "target_rows_per_bin": int(target_rows_per_bin),
+            "fitted_log1p_length_edges": [float(v) for v in raw_edges],
+            "reference_bin_sizes": ref_bin_sizes,
+        }
+
+    return np.clip(out, 0.0, 1.0), params
+
+
 def _fit_quadratic_residual_model(
     g: pd.DataFrame,
     length_field: str,
@@ -296,6 +413,18 @@ def transform_one_dataset(
                 field,
                 saturation_quantile=float(spec.get("saturation_quantile", 0.95)),
             )
+
+        elif method == "domain_length_conditioned_ecdf_positive":
+            score, params = _domain_length_conditioned_ecdf_positive(
+                a1,
+                target,
+                field,
+                length_field=spec["length_field"],
+                max_bins=int(spec.get("max_bins", 30)),
+                min_bins=int(spec.get("min_bins", 4)),
+                target_rows_per_bin=int(spec.get("target_rows_per_bin", 20)),
+            )
+            fitted_params[field] = params
 
         elif method == "domain_length_residual_typicality":
             score, params = _domain_length_residual_typicality(
