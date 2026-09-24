@@ -1,0 +1,17 @@
+version: 1
+
+bootstrap:
+  method: nonparametric_percentile
+  reps: 2000
+  alpha: 0.05
+  seed: 20260924
+  batch_size: 16
+
+domain_quality:
+  point_estimator: mean_record_Q
+  report_median_and_quantiles: true
+
+expansion_comparison:
+  preserve_subset_relation: true
+  report_added_only: true
+  overlap_Q_tolerance: 1.0e-12
