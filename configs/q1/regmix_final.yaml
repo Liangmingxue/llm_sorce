@@ -1,0 +1,47 @@
+version: 1
+
+random_seed: 20260924
+final_tuning_folds: 5
+n_jobs: -1
+
+# Frozen from Step-10 nested-CV target winners.
+# Step-10b is diagnostic only and does not change these assignments.
+target_family:
+  loss_arxiv: ilr_ridge
+  loss_dm_mathematics: ilr_ridge
+  loss_freelaw: ilr_ridge
+  loss_github: ilr_ridge
+  loss_gutenberg_pg_19: quadratic_ridge_simplex
+  loss_hackernews: quadratic_ridge_simplex
+  loss_pile_cc: quadratic_ridge_simplex
+  loss_pubmed_abstracts: quadratic_ridge_simplex
+  loss_pubmed_central: ilr_ridge
+  loss_stackexchange: ilr_ridge
+  loss_ubuntu_irc: ilr_ridge
+  loss_uspto_backgrounds: ilr_ridge
+  loss_wikipedia_en: ilr_ridge
+
+ridge_alphas:
+  - 1.0e-4
+  - 1.0e-3
+  - 1.0e-2
+  - 1.0e-1
+  - 1.0
+  - 10.0
+  - 100.0
+  - 1000.0
+
+# Frozen before opening A6-A11. Values above 1e-3 were added only after
+# Step-10b showed that the original 1e-3 boundary was too narrow.
+ilr_epsilons:
+  - 1.0e-6
+  - 1.0e-5
+  - 1.0e-4
+  - 2.5e-4
+  - 5.0e-4
+  - 7.5e-4
+  - 1.0e-3
+  - 1.5e-3
+  - 2.0e-3
+  - 5.0e-3
+  - 1.0e-2
