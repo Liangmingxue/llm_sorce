@@ -1,4 +1,4 @@
-version: 1
+version: 2
 reference_policy:
   direct_quality_signals: "A1 global empirical reference; A2/A3 reuse A1"
   domain_dependent_signals: "A1 source-domain empirical reference; A2 arxiv and A3 github reuse corresponding A1 domain"
@@ -76,37 +76,31 @@ transforms:
     note: "all four components are empirically positive; equal-weight ECDF mean is as stable as PCA and more interpretable"
 
   dsir_books:
-    method: domain_ecdf_directional
-    directions:
-      arxiv: positive
-      book: typicality
-      c4: negative
-      commoncrawl: negative
-      github: negative
-      stackexchange: negative
-      wikipedia: negative
+    method: domain_length_conditioned_ecdf_positive
+    length_field: rps_doc_word_count
+    length_transform: log1p
+    max_bins: 30
+    min_bins: 4
+    target_rows_per_bin: 20
+    note: "A1 domain-specific word-count-conditioned ECDF; A2/A3 reuse A1 bin boundaries and conditional reference distributions; positive direction after length deconfounding"
 
   dsir_wiki:
-    method: domain_ecdf_directional
-    directions:
-      arxiv: positive
-      book: typicality
-      c4: negative
-      commoncrawl: negative
-      github: negative
-      stackexchange: negative
-      wikipedia: negative
+    method: domain_length_conditioned_ecdf_positive
+    length_field: rps_doc_word_count
+    length_transform: log1p
+    max_bins: 30
+    min_bins: 4
+    target_rows_per_bin: 20
+    note: "A1 domain-specific word-count-conditioned ECDF; A2/A3 reuse A1 bin boundaries and conditional reference distributions; positive direction after length deconfounding"
 
   dsir_math:
-    method: domain_ecdf_directional
-    directions:
-      arxiv: positive
-      book: typicality
-      c4: negative
-      commoncrawl: negative
-      github: negative
-      stackexchange: negative
-      wikipedia: negative
+    method: domain_length_conditioned_ecdf_positive
+    length_field: rps_doc_word_count
+    length_transform: log1p
+    max_bins: 30
+    min_bins: 4
+    target_rows_per_bin: 20
+    note: "A1 domain-specific word-count-conditioned ECDF; A2/A3 reuse A1 bin boundaries and conditional reference distributions; positive direction after length deconfounding"
 
   rps_doc_word_count:
     method: domain_ecdf_p95_saturation
