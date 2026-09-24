@@ -81,6 +81,83 @@ def _normalize_with_fallback(values: pd.Series) -> pd.Series:
     )
 
 
+def _weighted_group_score(
+    df: pd.DataFrame,
+    fields: list[str],
+    weights: np.ndarray,
+) -> np.ndarray:
+    cols = [_score_col(f) for f in fields]
+    x = (
+        df[cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .to_numpy(dtype=float)
+    )
+    valid = np.isfinite(x)
+    w = np.asarray(weights, dtype=float)
+
+    numerator = np.nansum(x * w[None, :], axis=1)
+    denominator = np.sum(valid * w[None, :], axis=1)
+
+    return np.divide(
+        numerator,
+        denominator,
+        out=np.full(len(df), np.nan, dtype=float),
+        where=denominator > 0,
+    )
+
+
+def _domain_midrank_ecdf(
+    group_scores: pd.DataFrame,
+    domains: pd.Series,
+    group_names: list[str],
+) -> pd.DataFrame:
+    out = group_scores.copy()
+
+    for domain, idx in domains.groupby(domains, sort=False).groups.items():
+        for group in group_names:
+            s = pd.to_numeric(group_scores.loc[idx, group], errors="coerce")
+            valid = s.notna()
+            n = int(valid.sum())
+            if n == 0:
+                out.loc[idx, group] = np.nan
+                continue
+
+            ranks = s.loc[valid].rank(method="average")
+            u = (ranks - 0.5) / n
+            out.loc[u.index, group] = u.to_numpy(dtype=float)
+            out.loc[idx.difference(u.index), group] = np.nan
+
+    return out
+
+
+def _group_critic_components(
+    df: pd.DataFrame,
+    group_names: list[str],
+) -> pd.DataFrame:
+    x = df[group_names].apply(pd.to_numeric, errors="coerce")
+    std = x.std(axis=0, ddof=1)
+    corr = x.corr(method="spearman", min_periods=20)
+
+    rows = []
+    for group in group_names:
+        peers = [g for g in group_names if g != group]
+        r = corr.loc[group, peers].abs().dropna()
+        conflict = float((1.0 - r).sum()) if len(r) else 0.0
+        mean_abs_corr = float(r.mean()) if len(r) else np.nan
+        sigma = float(std[group]) if np.isfinite(std[group]) else 0.0
+        rows.append(
+            {
+                "group": group,
+                "std": sigma,
+                "mean_abs_spearman": mean_abs_corr,
+                "conflict": conflict,
+                "critic_information": sigma * conflict,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 def compute_weights(
     transformed_a1: Path,
     config_path: Path,
@@ -197,15 +274,17 @@ def compute_weights(
     n_groups = len(groups)
     equal_group_weight = 1.0 / n_groups
 
+    # First level: domain-balanced CRITIC inside each indicator group.
+    # Equal 1/G group weights are retained only as a diagnostic baseline.
     weight_parts = []
     for group_name, g in diagnostics.groupby("group", sort=False):
         g = g.copy()
         g["within_group_weight"] = _normalize_with_fallback(
             g["domain_balanced_critic_information"]
         ).to_numpy()
-        g["group_weight"] = equal_group_weight
+        g["preliminary_group_weight"] = equal_group_weight
         g["preliminary_weight"] = (
-            g["within_group_weight"] * g["group_weight"]
+            g["within_group_weight"] * g["preliminary_group_weight"]
         )
         weight_parts.append(g)
 
@@ -223,35 +302,133 @@ def compute_weights(
     weights["_order"] = [
         order[(g, f)] for g, f in zip(weights["group"], weights["field"])
     ]
-    weights = weights.sort_values("_order").drop(columns="_order")
+    weights = weights.sort_values("_order").drop(columns="_order").reset_index(drop=True)
 
     weights.to_csv(
         output_dir / "preliminary_group_balanced_critic_weights.csv",
         index=False,
     )
 
+    # Second level: construct one composite score per group using the first-level
+    # weights. Missing indicators are handled by renormalizing over available
+    # within-group weights for each record.
+    group_names = list(groups)
+    group_scores = pd.DataFrame(index=df.index)
+    within_lookup: dict[str, np.ndarray] = {}
+
+    for group_name, fields in groups.items():
+        gw = (
+            weights.loc[weights["group"] == group_name]
+            .set_index("field")
+            .loc[fields, "within_group_weight"]
+            .to_numpy(dtype=float)
+        )
+        within_lookup[group_name] = gw
+        group_scores[group_name] = _weighted_group_score(df, fields, gw)
+
+    pooled_group_corr = group_scores.corr(method="spearman", min_periods=20)
+    pooled_group_corr.to_csv(output_dir / "group_score_spearman_a1.csv")
+
+    # Group composites have different raw variances simply because groups have
+    # different numbers/redundancies of indicators. Before second-level CRITIC,
+    # normalize each group score to a domain-wise A1 midrank ECDF. This preserves
+    # Spearman dependence while removing the artificial variance-compression bias.
+    domain_series = df["source_domain"].astype(str)
+    group_scores_ecdf = _domain_midrank_ecdf(
+        group_scores,
+        domain_series,
+        group_names,
+    )
+
+    group_domain_rows = []
+    for domain in domains:
+        mask = domain_series == domain
+        comp = _group_critic_components(
+            group_scores_ecdf.loc[mask, group_names],
+            group_names,
+        )
+        comp.insert(0, "domain", domain)
+        group_domain_rows.append(comp)
+
+    group_domain_diag = pd.concat(group_domain_rows, ignore_index=True)
+    group_domain_diag.to_csv(
+        output_dir / "group_critic_domain_diagnostics.csv",
+        index=False,
+    )
+
+    group_balanced = (
+        group_domain_diag.groupby("group", as_index=False)
+        .agg(
+            domain_balanced_std=("std", "mean"),
+            domain_balanced_mean_abs_spearman=("mean_abs_spearman", "mean"),
+            domain_balanced_conflict=("conflict", "mean"),
+            domain_balanced_critic_information=("critic_information", "mean"),
+        )
+    )
+    group_balanced["group_weight"] = _normalize_with_fallback(
+        group_balanced["domain_balanced_critic_information"]
+    ).to_numpy()
+
+    group_order = {g: i for i, g in enumerate(group_names)}
+    group_balanced["_order"] = group_balanced["group"].map(group_order)
+    group_balanced = (
+        group_balanced.sort_values("_order")
+        .drop(columns="_order")
+        .reset_index(drop=True)
+    )
+    group_balanced.to_csv(
+        output_dir / "group_critic_weights.csv",
+        index=False,
+    )
+
+    final_weights = weights.merge(
+        group_balanced[["group", "group_weight"]],
+        on="group",
+        how="left",
+        validate="many_to_one",
+    )
+    final_weights["final_weight"] = (
+        final_weights["within_group_weight"] * final_weights["group_weight"]
+    )
+    final_weights.to_csv(
+        output_dir / "hierarchical_group_critic_weights.csv",
+        index=False,
+    )
+
     group_summary = (
-        weights.groupby("group", as_index=False)
+        final_weights.groupby("group", as_index=False)
         .agg(
             indicators=("field", "count"),
-            assigned_group_weight=("group_weight", "first"),
-            resulting_weight_sum=("preliminary_weight", "sum"),
+            preliminary_group_weight=("preliminary_group_weight", "first"),
+            hierarchical_group_weight=("group_weight", "first"),
+            preliminary_weight_sum=("preliminary_weight", "sum"),
+            final_weight_sum=("final_weight", "sum"),
         )
+    )
+    group_summary["_order"] = group_summary["group"].map(group_order)
+    group_summary = (
+        group_summary.sort_values("_order")
+        .drop(columns="_order")
+        .reset_index(drop=True)
     )
     group_summary.to_csv(output_dir / "group_weight_summary.csv", index=False)
 
-    print("Indicator-weight diagnostics completed.")
+    print("Hierarchical indicator-weight diagnostics completed.")
     print(f"Output directory: {output_dir}")
     print(f"A1 rows: {len(df)}")
     print(f"Domains: {len(domains)} ({', '.join(domains)})")
     print(f"Indicators: {len(all_fields)}")
-    print(f"Groups: {n_groups}; preliminary group weight = {equal_group_weight:.4f} each")
+    print(f"Groups: {n_groups}")
+    print("Hierarchical group weights:")
+    for row in group_balanced.itertuples(index=False):
+        print(f"  {row.group}: {row.group_weight:.6f}")
     print(f"Preliminary indicator weights sum = {weights['preliminary_weight'].sum():.12f}")
+    print(f"Final indicator weights sum = {final_weights['final_weight'].sum():.12f}")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Compute Q1 indicator-correlation diagnostics and preliminary group-balanced CRITIC weights."
+        description="Compute Q1 hierarchical domain-balanced CRITIC indicator weights."
     )
     parser.add_argument(
         "--transformed-a1",
