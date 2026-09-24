@@ -1,0 +1,15 @@
+version: 1
+
+huber:
+  scale_reference: A1
+  domain_balance: median_of_domain_robust_scales
+  mad_consistency: 1.4826
+  delta_multiplier: 1.345
+  solver: deterministic_bisection
+  bisection_iterations: 70
+  chunk_size: 20000
+
+missing_policy:
+  preserve_indicator_nan: true
+  renormalize_available_weights_per_record: true
+  drop_record_if_partial_missing: false
