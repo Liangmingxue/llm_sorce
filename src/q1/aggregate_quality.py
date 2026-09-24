@@ -61,7 +61,7 @@ def _score_matrix(df: pd.DataFrame, fields: list[str]) -> np.ndarray:
     x = (
         df[cols]
         .apply(pd.to_numeric, errors="coerce")
-        .to_numpy(dtype=float)
+        .to_numpy(dtype=float, copy=True)
     )
     x[~np.isfinite(x)] = np.nan
     return x
