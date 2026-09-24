@@ -221,3 +221,4 @@ __marimo__/
 artifacts/q1/preprocessed/\nartifacts/q1/standardized/\n\nartifacts/q1/diagnostics/\n\nartifacts/q1/transformed/\n
 artifacts/q1/model/
 artifacts/q1/quality/
+artifacts/q1/domain_quality/
