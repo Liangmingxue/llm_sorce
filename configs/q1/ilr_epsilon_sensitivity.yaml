@@ -1,0 +1,34 @@
+version: 1
+
+random_seed: 20260924
+outer_folds: 5
+inner_folds: 4
+n_jobs: -1
+
+# <= 1e-3 is treated as the primary zero-replacement range.
+# Larger values are stress-test log offsets to diagnose whether the
+# original Step-10 optimum was caused by the upper grid boundary.
+primary_zero_replacement_max: 1.0e-3
+
+epsilons:
+  - 1.0e-6
+  - 1.0e-5
+  - 1.0e-4
+  - 2.5e-4
+  - 5.0e-4
+  - 7.5e-4
+  - 1.0e-3
+  - 1.5e-3
+  - 2.0e-3
+  - 5.0e-3
+  - 1.0e-2
+
+ridge_alphas:
+  - 1.0e-4
+  - 1.0e-3
+  - 1.0e-2
+  - 1.0e-1
+  - 1.0
+  - 10.0
+  - 100.0
+  - 1000.0
