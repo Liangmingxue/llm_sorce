@@ -222,3 +222,4 @@ artifacts/q1/preprocessed/\nartifacts/q1/standardized/\n\nartifacts/q1/diagnosti
 artifacts/q1/model/
 artifacts/q1/quality/
 artifacts/q1/domain_quality/
+artifacts/q1/regmix_audit/
